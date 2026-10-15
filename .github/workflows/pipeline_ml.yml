@@ -34,3 +34,15 @@ jobs:
     - name: Fase 3 - Motor de Inteligência Artificial (ML)
       run: |
         python ml_model.py
+
+
+        # ... (seus passos anteriores)
+    - name: Fase 3 - Motor de Inteligência Artificial (ML)
+      run: |
+        python ml_model.py
+
+    - name: Salvar Resultado Final para a Equipe (Artifact)
+      uses: actions/upload-artifact@v4
+      with:
+        name: dados_enriquecidos_ia
+        path: resultado_final_ia.csv
