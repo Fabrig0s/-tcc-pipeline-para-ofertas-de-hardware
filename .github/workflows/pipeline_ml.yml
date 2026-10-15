@@ -11,22 +11,26 @@ jobs:
 
     steps:
     - name: Fazer Checkout do Código
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Configurar Python 3.10
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Instalar Dependências (Requests, Pandas e Scikit-Learn)
+    - name: Instalar Dependências
       run: |
         python -m pip install --upgrade pip
         pip install requests pandas scikit-learn
 
-    - name: Fase 1 - Executar Motor de Extração (Scraping KaBuM!)
+    - name: Fase 1 - Extração (Scraping)
       run: |
         python extracao_kabum.py
 
-    - name: Fase 2 - Executar Motor de Inteligência Artificial
+    - name: Fase 2 - Tratamento de Dados (ETL da Equipe)
+      run: |
+        python tratamento_dados.py
+
+    - name: Fase 3 - Motor de Inteligência Artificial (ML)
       run: |
         python ml_model.py
