@@ -10,11 +10,7 @@ caminho_csv = os.path.join(diretorio_atual, 'ofertas_kabum.csv')
 
 # 1. Dicionário de Alvos (Termo de busca na API -> Categoria no seu Banco de Dados)
 categorias_alvo = {
-    "teclado": "Teclados",
-    "mouse": "Mouses",
-    "monitor": "Monitores",
-    "placa de video": "Hardware",
-    "headset": "Áudio"
+    "placa de video": "Hardware"
 }
 
 def extrair_catalogo_completo(alvos):
@@ -109,9 +105,6 @@ if resultados:
 else:
     print("\nNenhum dado foi extraído. Verifique sua conexão ou bloqueios de IP.")
 
-
-    import pandas as pd
-import os
 
 try:
 
