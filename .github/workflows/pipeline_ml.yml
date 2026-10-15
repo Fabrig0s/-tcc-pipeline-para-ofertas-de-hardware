@@ -40,7 +40,11 @@ jobs:
       run: |
         python ml_model.py
 
+<<<<<<< HEAD
     - name: Salvar Resultado Final para a Equipe (Artifact) # identação arrumada
+=======
+    - name: Salvar Resultado Final para a Equipe (Artifact)
+>>>>>>> a1b59513ab7e93523fdf854b95808ae55c226690
       uses: actions/upload-artifact@v4
       with:
         name: dados_enriquecidos_ia
