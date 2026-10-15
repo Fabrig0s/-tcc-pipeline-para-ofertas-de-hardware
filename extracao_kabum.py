@@ -6,7 +6,7 @@ import time
 import random
 
 diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-caminho_csv = os.path.join(diretorio_atual, 'ofertas_kabum_bronze.csv')
+caminho_csv = os.path.join(diretorio_atual, 'ofertas_kabum.csv')
 
 # 1. Dicionário de Alvos (Termo de busca na API -> Categoria no seu Banco de Dados)
 categorias_alvo = {
