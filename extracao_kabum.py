@@ -8,9 +8,22 @@ import random
 diretorio_atual = os.path.dirname(os.path.abspath(__file__))
 caminho_csv = os.path.join(diretorio_atual, 'ofertas_kabum.csv')
 
-# 1. Dicionário de Alvos (Termo de busca na API -> Categoria no seu Banco de Dados)
+
 categorias_alvo = {
-    "placa de video": "Hardware"
+    "placa de video": "Hardware",
+    "mouse": "Mouses",
+    "teclado": "Teclados",
+    "placa mãe": "Placa-mãe",
+    "memória ram": "Mémoria Ram",
+    "fonte": "Fontes",
+    "hd": "Armazenamento",
+    "ssd": "Armazenamento",
+    "processador": "Processadores",
+    "fone de ouvido": "Áudio",
+    "headset": "Áudio",
+    "microfone": "Áudio",
+    "mouse pad": "Mouse Pad",
+    "gabinete": "Gabinetes"
 }
 
 def extrair_catalogo_completo(alvos):
@@ -24,7 +37,7 @@ def extrair_catalogo_completo(alvos):
     
     ofertas_totais = []
     
-    # Session reaproveita a mesma conexão TCP para todas as páginas (padrão de mercado)
+
     with requests.Session() as session:
         session.headers.update(headers)
         
@@ -32,11 +45,11 @@ def extrair_catalogo_completo(alvos):
             print(f"\n[+] Iniciando extração: {categoria} (Busca: '{termo}')")
             pagina = 1
             
-            # Loop infinito controlado: Roda até a API retornar uma lista vazia
+
             while True:
                 print(f"  -> Lendo página {pagina}...")
                 
-                # O page_size define quantos itens vêm por vez. Manter 20 a 50 é seguro contra bloqueios.
+
                 params = {
                     'query': termo,
                     'page_number': pagina,
@@ -44,7 +57,7 @@ def extrair_catalogo_completo(alvos):
                 }
                 
                 try:
-                    # Atualiza o Referer para parecer navegação real
+
                     session.headers.update({'Referer': f'https://www.kabum.com.br/busca/{termo}?page_number={pagina}'})
                     
                     response = session.get(base_url, params=params)
@@ -56,8 +69,7 @@ def extrair_catalogo_completo(alvos):
                     response.raise_for_status()
                     dados = response.json()
                     itens = dados.get('data', [])
-                    
-                    # Condição de parada: se não vierem itens, acabaram as páginas daquela categoria
+
                     if not itens:
                         print(f"  -> Fim dos resultados para '{termo}'.")
                         break
@@ -83,7 +95,6 @@ def extrair_catalogo_completo(alvos):
                             }
                             ofertas_totais.append(oferta_estruturada)
                             
-                    # Pausa aleatória entre 1 e 2.5 segundos para não sobrecarregar a API (Anti-Ban)
                     time.sleep(random.uniform(1.0, 2.5))
                     pagina += 1
                     
@@ -93,11 +104,9 @@ def extrair_catalogo_completo(alvos):
                     
     return ofertas_totais
 
-# 2. Execução Principal
 print("Iniciando Pipeline de Extração...")
 resultados = extrair_catalogo_completo(categorias_alvo)
 
-# 3. Exportação para a Camada Bronze
 if resultados:
     df = pd.DataFrame(resultados)
     df.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
