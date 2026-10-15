@@ -41,8 +41,8 @@ jobs:
       run: |
         python ml_model.py
 
-    - name: Salvar Resultado Final para a Equipe (Artifact)
+-    name: Salvar Resultado Final para a Equipe (Artifact)
       uses: actions/upload-artifact@v4
       with:
         name: dados_enriquecidos_ia
-        path: resultado_final_ia.csv
+        path: kabum_analisado.csv  
