@@ -10,24 +10,20 @@ from urllib.parse import quote_plus
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
-# Importações para a Amazon
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-# Mudamos o nome para refletir que agora tem várias lojas
+
 caminho_csv = os.path.join(diretorio_atual, 'ofertas_consolidadas.csv')
 
-# A sua Fonte Única de Verdade (funciona para todas as lojas agora)
 categorias_alvo = {
     "placa de video": "Hardware",
 }
 
-# =====================================================================
-# 1. MOTOR DA KABUM (SEU CÓDIGO ORIGINAL)
-# =====================================================================
+# 1. KABUM
+
 def extrair_kabum(alvos):
     base_url = "https://servicespub.prod.api.aws.grupokabum.com.br/catalog/v2/products"
     headers = {
@@ -95,15 +91,14 @@ def extrair_kabum(alvos):
                     
     return ofertas_totais
 
-# =====================================================================
-# 2. MOTOR DA AMAZON (ADAPTADO COM O SEU DICIONÁRIO)
-# =====================================================================
+# 2. AMAZON
+
 def extrair_amazon(alvos):
     print("\n[Amazon] Iniciando extração via Selenium em modo invisível...")
     ofertas_totais = []
     
     chrome_options = Options()
-    #chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--headless')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
@@ -114,13 +109,12 @@ def extrair_amazon(alvos):
     try:
         driver = webdriver.Chrome(options=chrome_options)
         
-        # O mesmo loop que a KaBuM usa!
         for termo, categoria in alvos.items():
             print(f"  -> Buscando: '{termo}'...")
             url_busca = f"https://www.amazon.com.br/s?k={quote_plus(termo)}"
             
             driver.get(url_busca)
-            time.sleep(random.uniform(2.5, 4.0)) # Pausa para carregar o JS da Amazon
+            time.sleep(random.uniform(2.5, 4.0))
             
             sopa = BeautifulSoup(driver.page_source, "html.parser")
             blocos = sopa.select('div[data-component-type="s-search-result"]')
@@ -175,7 +169,7 @@ def extrair_pichau(alvos_pichau):
     ofertas_totais = []
     
     chrome_options = Options()
-    # chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--headless')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
@@ -198,7 +192,6 @@ def extrair_pichau(alvos_pichau):
             url_paginada = f"{url_categoria}?page={pagina}"
             print(f"     Acessando página {pagina} (Nova Sessão)...")
             
-            # 1. ABRIMOS O CHROME AQUI DENTRO (Nova Visita!)
             try:
                 driver = webdriver.Chrome(options=chrome_options)
                 driver.get(url_paginada)
@@ -213,7 +206,7 @@ def extrair_pichau(alvos_pichau):
                 
                 if not encontrados:
                     print(f"     -> Pombo detectado ou fim do catálogo na página {pagina}.")
-                    driver.quit() # Fecha antes de quebrar
+                    driver.quit()
                     break 
                     
                 produtos_nesta_pagina = 0
@@ -252,15 +245,13 @@ def extrair_pichau(alvos_pichau):
             except Exception as e:
                 print(f"     -> Falha na página {pagina}: {e}")
             finally:
-                # 2. DESTRUÍMOS O CHROME NO FINAL DA PÁGINA
                 try:
                     driver.quit()
                 except:
                     pass
             
-            # Avança para a próxima página
             pagina += 1
-            # Pausa extra entre sessões para o servidor da Pichau não estranhar
+
             time.sleep(random.uniform(2.0, 4.0))
             
     print(f"  -> Total de {len(ofertas_totais)} ofertas coletadas na Pichau.")
@@ -271,9 +262,8 @@ def extrair_terabyte(alvos_terabyte):
     print("\n[Terabyte] Iniciando extração via Selenium + BeautifulSoup (Método Categoria)...")
     ofertas_totais = []
     
-    # Configurações silenciosas do Chrome
     chrome_options = Options()
-    # chrome_options.add_argument('--headless') # Descomente para produção na nuvem!
+    chrome_options.add_argument('--headless')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
@@ -287,15 +277,12 @@ def extrair_terabyte(alvos_terabyte):
         for url_categoria, categoria_nome in alvos_terabyte.items():
             print(f"  -> Lendo categoria: '{categoria_nome}'...")
             driver.get(url_categoria)
-            time.sleep(random.uniform(3.0, 5.0)) # Aguarda a Terabyte carregar os cards da página inicial
+            time.sleep(random.uniform(3.0, 5.0))
             
-            # (Opcional) A Terabyte tem um botão "Ver Mais Produtos". O código do seu colega
-            # clicava nele repetidamente. Num primeiro momento, para garantir estabilidade,
-            # vamos ler apenas a primeira página de 20-30 produtos que a loja carrega.
-            
+            # (Opcional) A Terabyte tem um botão "Ver Mais Produtos"
+
             sopa = BeautifulSoup(driver.page_source, "html.parser")
             
-            # Encontra todos os cards de produto na página (as classes mapeadas pelo colega)
             cards = sopa.select("div.product-item__box")
             
             for card in cards:
@@ -306,22 +293,18 @@ def extrair_terabyte(alvos_terabyte):
                 titulo = link.get("title") or link.get_text(" ", strip=True)
                 url_produto = link.get("href")
                 
-                # Extraindo o código/ID do produto a partir da URL (ex: /produto/1234/placa-de-video...)
                 id_externo = "ND" # Não Disponível
                 match_id = re.search(r'/produto/(\d+)/', url_produto)
                 if match_id:
                     id_externo = match_id.group(1)
                 
-                # Regra ML: Ignorar esgotados
                 esgotado = card.select_one(".tbt_esgotado") is not None
                 if esgotado:
                     continue
                     
-                # Extraindo e convertendo o preço à vista
                 preco_el = card.select_one(".product-item__new-price span")
                 if preco_el:
                     texto_preco = preco_el.get_text()
-                    # A função converter_preco do seu colega reescrita aqui em 1 linha:
                     preco_limpo = texto_preco.replace('R$', '').replace('.', '').replace(',', '.').strip()
                     try:
                         preco_float = float(preco_limpo)
@@ -346,9 +329,6 @@ def extrair_terabyte(alvos_terabyte):
     print(f"  -> {len(ofertas_totais)} ofertas coletadas na Terabyte.")
     return ofertas_totais
 
-# =====================================================================
-# 3. ORQUESTRAÇÃO FINAL E SALVAMENTO (FAIL-SAFE CORRIGIDO)
-# =====================================================================
 print("=== INICIANDO PIPELINE DE EXTRAÇÃO MULTI-LOJAS ===")
 
 categorias_pichau = {
@@ -366,7 +346,6 @@ categorias_pichau = {
    
 }
 
-# DICIONÁRIO EXCLUSIVO DA TERABYTE (Navegação Direta)
 categorias_terabyte = {
     "https://www.terabyteshop.com.br/hardware/placas-de-video": "Placas de vídeo",
     "https://www.terabyteshop.com.br/hardware/processadores": "Processadores",
@@ -381,19 +360,17 @@ categorias_terabyte = {
 }
 
 try:
-    # 1. Roda as QUATRO lojas (As Joias do Infinito do Hardware)
     resultados_kabum = extrair_kabum(categorias_alvo)
     resultados_amazon = extrair_amazon(categorias_alvo)
     resultados_pichau = extrair_pichau(categorias_pichau)
-    resultados_terabyte = extrair_terabyte(categorias_terabyte) # Adicionado!
+    resultados_terabyte = extrair_terabyte(categorias_terabyte) 
     
-    # 2. Junta o catálogo do Brasil inteiro!
     resultados_totais = resultados_kabum + resultados_amazon + resultados_pichau + resultados_terabyte
 
     if not resultados_totais:
         raise ValueError("Extração retornou vazia (Possível bloqueio de IP geral).")
         
-    # 3. Salva o CSV Consolidador
+
     df_ofertas = pd.DataFrame(resultados_totais)
     df_ofertas.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
     print(f"\n[SUCESSO] {len(df_ofertas)} ofertas coletadas das 4 gigantes e salvas!")
@@ -403,7 +380,7 @@ try:
     if not resultados_totais:
         raise ValueError("Extração retornou vazia (Possível bloqueio de IP geral).")
         
-    # 3. Salva o CSV Consolidador
+
     df_ofertas = pd.DataFrame(resultados_totais)
     df_ofertas.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
     print(f"\n[SUCESSO] {len(df_ofertas)} ofertas de KaBuM, Amazon e Pichau salvas!")
@@ -412,7 +389,6 @@ except Exception as e:
     print(f"\n[FALHA NA EXTRAÇÃO REAL]: {e}")
     print("Acionando o plano de contingência (Mock Data) para não travar a IA...")
     
-    # Plano B estruturado com as colunas certas!
     dados_mock = {
         'id_produto_externo': ['1001', '1002', '1003'],
         'nome_produto': ['Placa de Vídeo RTX 4060', 'Processador AMD Ryzen 5', 'Placa Mãe B550M'],
@@ -426,7 +402,6 @@ except Exception as e:
     df_mock.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
     print(f"Arquivo '{caminho_csv}' gerado via contingência com sucesso.")
 
-# Verificação final para o GitHub Actions
 if os.path.exists(caminho_csv):
     print("Confirmação final: O arquivo está no servidor e pronto para a Inteligência Artificial.")
 else:
