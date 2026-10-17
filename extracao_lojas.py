@@ -13,6 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc
 
 diretorio_atual = os.path.dirname(os.path.abspath(__file__))
 
@@ -165,17 +166,16 @@ def _decodificar_texto(texto):
 
 
 def extrair_pichau(alvos_pichau):
-    print("\n[Pichau] Iniciando extração via Selenium (Session Cycling para evitar o Pombo)...")
+    print("\n[Pichau] Iniciando extração via Undetected Chromedriver (Anti-Cloudflare)...")
     ofertas_totais = []
     
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--log-level=3')
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+    # A configuração do Undetected Chromedriver é ligeiramente diferente do Selenium puro
+    options = uc.ChromeOptions()
+    options.headless = True  # Ativa o modo invisível de forma segura para o UC
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1920,1080') # Simula um monitor real
     
     _PRODUTO = re.compile(r'"url_key":"([a-z0-9-]+)","name":"([^"]+)"')
     _AVISTA = re.compile(r'"pichau_prices":\{"avista":([0-9.]+)')
@@ -186,17 +186,20 @@ def extrair_pichau(alvos_pichau):
         print(f"  -> Lendo categoria: '{categoria_nome}'...")
         
         pagina = 1
-        max_paginas = 60
+        max_paginas = 5 # Mantemos o limite de 5 páginas por categoria para proteger o servidor
         
         while pagina <= max_paginas:
             url_paginada = f"{url_categoria}?page={pagina}"
-            print(f"     Acessando página {pagina} (Nova Sessão)...")
+            print(f"     Acessando página {pagina} (Nova Sessão Camuflada)...")
             
             try:
-                driver = webdriver.Chrome(options=chrome_options)
+                # O motor central agora é o uc.Chrome
+                driver = uc.Chrome(options=options)
                 driver.get(url_paginada)
                 
-                time.sleep(random.uniform(5.0, 7.0)) 
+                # Aumentamos a pausa ligeiramente. O Undetected Chromedriver precisa de
+                # alguns segundos extras para resolver os desafios matemáticos da Cloudflare invisivelmente.
+                time.sleep(random.uniform(8.0, 12.0)) 
                 
                 html = driver.page_source
                 dados = html.replace('\\"', '"')
@@ -293,7 +296,7 @@ def extrair_terabyte(alvos_terabyte):
                 titulo = link.get("title") or link.get_text(" ", strip=True)
                 url_produto = link.get("href")
                 
-                id_externo = "ND" # Não Disponível
+                id_externo = "ND"
                 match_id = re.search(r'/produto/(\d+)/', url_produto)
                 if match_id:
                     id_externo = match_id.group(1)
@@ -319,7 +322,7 @@ def extrair_terabyte(alvos_terabyte):
                             'data_coleta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         })
                     except ValueError:
-                        continue # Preço ilegível
+                        continue
                         
     except Exception as e:
         print(f"  -> Falha crítica na Terabyte: {e}")
@@ -374,16 +377,6 @@ try:
     df_ofertas = pd.DataFrame(resultados_totais)
     df_ofertas.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
     print(f"\n[SUCESSO] {len(df_ofertas)} ofertas coletadas das 4 gigantes e salvas!")
-
-
-
-    if not resultados_totais:
-        raise ValueError("Extração retornou vazia (Possível bloqueio de IP geral).")
-        
-
-    df_ofertas = pd.DataFrame(resultados_totais)
-    df_ofertas.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
-    print(f"\n[SUCESSO] {len(df_ofertas)} ofertas de KaBuM, Amazon e Pichau salvas!")
 
 except Exception as e:
     print(f"\n[FALHA NA EXTRAÇÃO REAL]: {e}")

@@ -39,4 +39,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dados_enriquecidos_ia
-        path: kabum_analisado.csv
+        path: ofertas.csv
