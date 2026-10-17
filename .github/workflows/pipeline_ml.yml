@@ -21,7 +21,7 @@ jobs:
     - name: Instalar Dependências
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas scikit-learn beautifulsoup4 selenium
+        pip install requests pandas scikit-learn beautifulsoup4 selenium undetected-chromedriver
 
     - name: Fase 1 - Extração (Scraping Multi-lojas)
       run: |
