@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, classification_report
 
 def executar_pipeline_ml():
     print("Carregando dados da KaBuM!...")
-    df = pd.read_csv("ofertas_kabum.csv", sep=';') # ou o nome/sep que você usou
+    df = pd.read_csv("ofertas_consolidadas.csv", sep=';') # ou o nome/sep que você usou
 
     if 'preco_medio_historico' not in df.columns:
         df['preco_medio_historico'] = df['preco'] * 1.15
@@ -38,7 +38,7 @@ def executar_pipeline_ml():
     df['situacao_compra'] = df['situacao_compra_cod'].map(mapa_tags)
     
 
-    df.to_csv("kabum_analisado.csv", index=False)
+    df.to_csv("ofertas_consolidadas.csv", index=False)
     print("Pipeline de ML concluído. Base atualizada com sucesso.")
 
 if __name__ == "__main__":
