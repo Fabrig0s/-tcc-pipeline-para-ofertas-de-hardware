@@ -21,24 +21,13 @@ jobs:
     - name: Instalar Dependências
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas scikit-learn beautifulsoup4 selenium google-cloud-bigquery db-dtypes openpyxl
-
-    - name: Autenticar no Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+        pip install requests pandas scikit-learn beautifulsoup4 selenium
 
     - name: Fase 1 - Extração (Scraping Multi-lojas)
       run: |
         python extracao_lojas.py
 
-    - name: Fase 2A - Carga no Banco de Dados (Load)
-      run: |
-        python carregar_dados.py
-
-    - name: Fase 2B - Tratamento no BigQuery (Transform)
-      run: |
-        python tratar_dados.py
+    # FASE 2 E AUTENTICAÇÃO REMOVIDAS TEMPORARIAMENTE PARA DESTRAVAR O TCC
 
     - name: Fase 3 - Motor de Inteligência Artificial (ML)
       run: |
@@ -48,4 +37,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dados_enriquecidos_ia
-        path: kabum_analisado.csv
+        path: ofertas_consolidadas.csv
