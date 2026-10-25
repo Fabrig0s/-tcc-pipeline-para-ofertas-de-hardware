@@ -21,7 +21,7 @@ jobs:
       - name: Instalar Dependências de Dados e Nuvem
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas scikit-learn supabase
+          pip install requests pandas scikit-learn supabase selenium webdriver-manager
 
       - name: Fase 1 - Extração (Scraping Multi-lojas)
         run: |
