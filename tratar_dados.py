@@ -19,9 +19,9 @@ from supabase import create_client, Client
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "postgresql://postgres.pxetpadnjpcvvmqlqvzg:Tcc%402026!dd@aws-0-us-east-1.pooler.supabase.com:5432/postgres")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "Tcc%402026!dd")
 
-TABELA_PRODUTO = "PRODUTO"
-TABELA_LOJA = "LOJA"
-TABELA_OFERTA = "OFERTA"
+TABELA_PRODUTO = "produtos"
+TABELA_LOJA = "lojas"
+TABELA_OFERTA = "ofertas"
 
 MARGEM_SITUACAO = 0.10
 LIMITE_OUTLIER = 0.30

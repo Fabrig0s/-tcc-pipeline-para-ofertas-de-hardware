@@ -1,29 +1,15 @@
+
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import glob
 import os
-import re
-import warnings
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.ensemble import IsolationForest
+import sys
+import re
 
-warnings.filterwarnings('ignore')
-print("=== INICIANDO PIPELINE DE MACHINE LEARNING E NLP ===")
-
-# Configuração de diretórios e gráficos
-sns.set_theme(style="whitegrid")
-diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-pasta_graficos = os.path.join(diretorio_atual, 'graficos_artigo')
-os.makedirs(pasta_graficos, exist_ok=True)
-
-# ---------------------------------------------------------
-# 1. FUNÇÃO DE LIMPEZA LEXICAL (REGEX)
-# ---------------------------------------------------------
 def extrair_modelo_principal(nome):
+    """Remove apenas a categoria genérica do início, preservando o modelo e as especificações."""
     nome = str(nome).strip()
-    nome = re.split(r'\s*[-|]\s*', nome)[0] # Corta sufixos
+    
     categorias = [
         r'teclado\s+para\s+notebook', r'teclado\s+mecan[íi]co', r'teclado\s+gamer', r'teclado',
         r'placa\s+de\s+v[íi]deo', r'placa\s+m[ãa]e', r'mem[óo]ria\s+ram', r'mem[óo]ria',
@@ -32,130 +18,106 @@ def extrair_modelo_principal(nome):
         r'ssd\s+nvme', r'ssd', r'hd\s+externo', r'disco\s+r[íi]gido',
         r'cooler\s+para\s+processador', r'water\s+cooler', r'processador', r'microfone'
     ]
-    regex = r'^(?:' + '|'.join(categorias) + r')\s*'
-    nome = re.sub(regex, '', nome, flags=re.IGNORECASE)
-    return re.sub(r'\s+', ' ', nome).strip().title()
+    
+    regex = r'^(?:' + '|'.join(categorias) + r')\s*(?:[-|]\s*)?'
+    
+    nome_limpo = re.sub(regex, '', nome, flags=re.IGNORECASE)
+    nome_limpo = re.sub(r'\s+', ' ', nome_limpo).strip().title()
+    
+    if not nome_limpo or nome_limpo == '-':
+        return nome.title()
+        
+    return nome_limpo
 
-# ---------------------------------------------------------
-# 2. CARREGAMENTO DOS DADOS
-# ---------------------------------------------------------
-caminho_base = os.path.join(diretorio_atual, 'dados kabum (3).csv')
-try:
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+pasta_historico = os.path.join(diretorio_atual, 'historico_semana')
+
+os.makedirs(pasta_historico, exist_ok=True)
+
+arquivos_historico = glob.glob(os.path.join(pasta_historico, "*.csv"))
+
+if not arquivos_historico:
+    print(f"[ERRO] Nenhum arquivo CSV encontrado na pasta: {pasta_historico}")
+    print("Por favor, coloque as planilhas dos dias anteriores lá dentro e rode novamente.")
+    sys.exit()
+
+lista_dataframes = []
+
+for arquivo in arquivos_historico:
     try:
-        df_base = pd.read_csv(caminho_base, sep=',', encoding='utf-8-sig', on_bad_lines='skip')
-    except:
-        df_base = pd.read_csv(caminho_base, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
-    
-    memoria_precos = df_base.groupby('nome_produto')['preco'].median().reset_index()
-    memoria_precos.rename(columns={'preco': 'preco_referencia_base'}, inplace=True)
-except FileNotFoundError:
-    print(f"Erro: Base histórica não encontrada em {caminho_base}")
-    exit()
+        df_dia = pd.read_csv(arquivo, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
+        if len(df_dia.columns) < 2: # Tenta com vírgula se ponto-e-vírgula falhar
+            df_dia = pd.read_csv(arquivo, sep=',', encoding='utf-8-sig', on_bad_lines='skip')
+        lista_dataframes.append(df_dia)
+        print(f"Lido com sucesso: {os.path.basename(arquivo)}")
+    except Exception as e:
+        print(f"Erro ao ler {os.path.basename(arquivo)}: {e}")
 
-caminho_hoje = os.path.join(diretorio_atual, 'ofertas_consolidadas.csv')
+df_historico_consolidado = pd.concat(lista_dataframes, ignore_index=True)
+print(f"\n[SUCESSO] {len(lista_dataframes)} planilhas combinadas. Total de linhas: {len(df_historico_consolidado)}")
+
+df_historico_consolidado['nome_produto_padronizado'] = df_historico_consolidado['nome_produto'].apply(extrair_modelo_principal)
+
+resumo_semanal = df_historico_consolidado.groupby('nome_produto_padronizado').agg(
+    preco_medio_semana=('preco', 'mean'),
+    volatilidade_semana=('preco', 'std')
+).reset_index()
+
+resumo_semanal['volatilidade_semana'] = resumo_semanal['volatilidade_semana'].fillna(0)
+
+caminho_hoje = os.path.join(diretorio_atual, 'ofertas_hoje.csv')
+
 try:
-    df_hoje = pd.read_csv(caminho_hoje, sep=';', encoding='utf-8-sig')
+    df_novo = pd.read_csv(caminho_hoje, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
+    if len(df_novo.columns) < 2:
+        df_novo = pd.read_csv(caminho_hoje, sep=',', encoding='utf-8-sig', on_bad_lines='skip')
 except FileNotFoundError:
-    print("Erro: Arquivo de ofertas de hoje não encontrado.")
-    exit()
+    print(f"[ERRO] O ficheiro {caminho_hoje} não foi encontrado.")
+    sys.exit()
 
-# ---------------------------------------------------------
-# 3. NLP - RESOLUÇÃO DE ENTIDADES (TF-IDF)
-# ---------------------------------------------------------
-print("Padronizando nomenclaturas com Inteligência Artificial (TF-IDF)...")
-memoria_precos['nome_limpo'] = memoria_precos['nome_produto'].apply(extrair_modelo_principal)
-df_hoje['nome_limpo'] = df_hoje['nome_produto'].apply(extrair_modelo_principal)
+df_novo['nome_produto_padronizado'] = df_novo['nome_produto'].apply(extrair_modelo_principal)
 
-nomes_base_originais = memoria_precos['nome_produto'].tolist()
-nomes_base_limpos = memoria_precos['nome_limpo'].tolist()
+df_analise = df_novo.merge(resumo_semanal, on='nome_produto_padronizado', how='left')
 
-vetorizador = TfidfVectorizer(analyzer='word', ngram_range=(1, 2), lowercase=True)
-matriz_base = vetorizador.fit_transform(nomes_base_limpos)
+df_analise['variacao_vs_semana'] = ((df_analise['preco'] - df_analise['preco_medio_semana']) / df_analise['preco_medio_semana']) * 100
 
-def buscar_produto_tfidf(linha, limite=0.45):
-    vetor_pesquisa = vetorizador.transform([linha['nome_limpo']])
-    similaridades = cosine_similarity(vetor_pesquisa, matriz_base)[0]
-    indice_maior = np.argmax(similaridades)
-    
-    if similaridades[indice_maior] >= limite:
-        return nomes_base_originais[indice_maior] # Retorna o nome exato da base para o merge
-    return linha['nome_produto'] # Produto novo
 
-df_hoje['nome_produto_padronizado'] = df_hoje.apply(buscar_produto_tfidf, axis=1)
-
-# ---------------------------------------------------------
-# 4. CRUZAMENTO E ENGENHARIA DE ATRIBUTOS
-# ---------------------------------------------------------
-df = df_hoje.merge(memoria_precos[['nome_produto', 'preco_referencia_base']], 
-                   left_on='nome_produto_padronizado', 
-                   right_on='nome_produto', 
-                   how='left')
-
-produtos_novos = df['preco_referencia_base'].isna()
-df.loc[produtos_novos, 'preco_referencia_base'] = df.loc[produtos_novos, 'preco'] 
-df['variacao_vs_base'] = ((df['preco'] - df['preco_referencia_base']) / df['preco_referencia_base']) * 100
-
-# ---------------------------------------------------------
-# 5. DETECÇÃO DE ANOMALIAS (ISOLATION FOREST)
-# ---------------------------------------------------------
-print("Treinando modelo de detecção de anomalias (Isolation Forest)...")
-df['outlier_ml'] = False
-df_treino = df[~produtos_novos]
+df_treino = df_analise.dropna(subset=['preco_medio_semana'])
 
 if len(df_treino) > 10:
-    X_precos = df_treino[['variacao_vs_base']].values
-    modelo_if = IsolationForest(contamination=0.02, random_state=42)
-    previsoes = modelo_if.fit_predict(X_precos)
-    df.loc[~produtos_novos, 'outlier_ml'] = previsoes == -1
+    X = df_treino[['variacao_vs_semana', 'volatilidade_semana']].values
+    
+    modelo_if = IsolationForest(contamination=0.15, random_state=42)
+    df_analise.loc[df_treino.index, 'outlier_ml'] = modelo_if.fit_predict(X) == -1
 
-# ---------------------------------------------------------
-# 6. REGRAS DE NEGÓCIO E CLASSIFICAÇÃO
-# ---------------------------------------------------------
-MARGEM = 10.0
-df['situacao_compra'] = 'Sem Histórico (Novo)'
-df.loc[~produtos_novos, 'situacao_compra'] = 'Preço Médio'
-df.loc[(~produtos_novos) & (df['variacao_vs_base'] <= -MARGEM), 'situacao_compra'] = 'Boa Compra'
-df.loc[(~produtos_novos) & (df['variacao_vs_base'] >= MARGEM), 'situacao_compra'] = 'Evitar'
-df.loc[df['outlier_ml'], 'situacao_compra'] = 'Anomalia (Isolada por IA)'
+df_analise['situacao_compra'] = 'Sem Histórico'
 
-# ---------------------------------------------------------
-# 7. EXPORTAÇÃO E VISUALIZAÇÃO
-# ---------------------------------------------------------
-# Garante que o nome original da oferta não se perca no CSV
-df.rename(columns={'nome_produto_x': 'nome_oferta_original'}, inplace=True)
+if 'outlier_ml' in df_analise.columns:
+    df_analise.loc[df_analise['outlier_ml'] == False, 'situacao_compra'] = 'Comportamento Normal'
+    
+    df_analise.loc[(df_analise['outlier_ml'] == True) & (df_analise['variacao_vs_semana'] < 0), 'situacao_compra'] = 'Baixa de Preço'
+    df_analise.loc[(df_analise['outlier_ml'] == True) & (df_analise['variacao_vs_semana'] > 0), 'situacao_compra'] = 'Aumento de Preço'
 
-colunas_finais = [
-    'nome_produto_padronizado', 'nome_oferta_original', 'nome_loja', 
-    'preco', 'preco_referencia_base', 'variacao_vs_base', 
-    'situacao_compra', 'url_oferta'
+
+print("\n=== DIAGNÓSTICO DA INTELIGÊNCIA ARTIFICIAL ===")
+print(df_analise['situacao_compra'].value_counts())
+
+colunas_desejadas = [
+    'nome_produto_padronizado', 'nome_produto', 'nome_loja', 
+    'preco', 'preco_medio_semana', 'variacao_vs_semana', 
+    'volatilidade_semana', 'situacao_compra'
 ]
-df_final = df[colunas_finais].sort_values(by=['nome_produto_padronizado', 'preco'])
+colunas_finais = [c for c in colunas_desejadas if c in df_analise.columns]
 
-caminho_final = os.path.join(diretorio_atual, 'dados_enriquecidos_ia.csv')
-df_final.to_csv(caminho_final, sep=';', index=False, encoding='utf-8-sig')
+df_final = df_analise[colunas_finais].sort_values(by=['situacao_compra', 'variacao_vs_semana'])
 
-print(f"\n[SUCESSO] Processamento concluído!")
-print(f" -> Tabela estruturada salva em: {caminho_final}")
+colunas_para_arredondar = ['preco', 'preco_medio_semana', 'variacao_vs_semana', 'volatilidade_semana']
 
+for col in colunas_para_arredondar:
+    if col in df_final.columns:
+        df_final[col] = df_final[col].round(2)
 
-# ---------------------------------------------------------
-# 8. GERAÇÃO DE GRÁFICOS PARA O ARTIGO (QUALIS)
-# ---------------------------------------------------------
-print("Gerando gráficos finais para o artigo...")
+caminho_final = os.path.join(diretorio_atual, 'resultado_isolation_forest.csv')
+df_final.to_csv(caminho_final, sep=';', index=False, encoding='utf-8-sig', decimal=',')
 
-# Gráfico 1: Distribuição das Recomendações
-plt.figure(figsize=(10, 5))
-cores = {'Boa Compra': '#2ca02c', 'Preço Médio': '#1f77b4', 'Evitar': '#ff7f0e', 
-         'Anomalia (Isolada por IA)': '#d62728', 'Sem Histórico (Novo)': '#7f7f7f'}
-ax = sns.countplot(data=df, x='situacao_compra', palette=cores, 
-                   order=['Boa Compra', 'Preço Médio', 'Evitar', 'Anomalia (Isolada por IA)', 'Sem Histórico (Novo)'])
-plt.title('Diagnóstico de Preços via Machine Learning e NLP', fontsize=14, fontweight='bold')
-plt.ylabel('Volume de Ofertas', fontsize=12)
-plt.xlabel('Classificação do Algoritmo', fontsize=12)
-plt.xticks(rotation=15)
-for p in ax.patches:
-    ax.annotate(f'{int(p.get_height())}', (p.get_x() + p.get_width() / 2., p.get_height()),
-                ha='center', va='center', xytext=(0, 5), textcoords='offset points')
-plt.tight_layout()
-plt.savefig(os.path.join(pasta_graficos, 'figura1_classificacao_final.png'), dpi=300)
-plt.close()
+print(f"\n[SUCESSO] O arquivo com o julgamento final da IA foi salvo em: {caminho_final}")
