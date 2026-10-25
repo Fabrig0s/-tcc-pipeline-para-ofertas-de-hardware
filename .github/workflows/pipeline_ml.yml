@@ -10,35 +10,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Fazer Checkout do Código
-      uses: actions/checkout@v4
+      - name: Fazer Checkout do Código
+        uses: actions/checkout@v4
 
-    - name: Configurar Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: Instalar Dependências de Dados e Nuvem
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests pandas scikit-learn supabase
+      - name: Instalar Dependências de Dados e Nuvem
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas scikit-learn supabase
 
+      - name: Fase 1 - Extração (Scraping Multi-lojas)
+        run: |
+          python extracao_lojas.py
 
-    - name: Fase 1 - Extração (Scraping Multi-lojas)
-      run: |
-        python extracao_lojas.py
+      - name: Fase de Tratamento e Inteligência Artificial
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python tratar_dados.py
 
-    - name: Fase de Tratamento e Inteligência Artificial
-      env:
-        SUPABASE_URL: ${{ postgresql://postgres.pxetpadnjpcvvmqlqvzg:Tcc%402026!dd@aws-0-us-east-1.pooler.supabase.com:5432/postgres }}
-        SUPABASE_KEY: ${{ Tcc%402026!dd }}
-      run: |
-        python tratar_dados.py
-
-    - name: Salvar Resultado Final para a Equipe (Artifact)
-      uses: actions/upload-artifact@v4
-      with:
-        name: dados_enriquecidos_ia
-        path: |
-          resultado_isolation_forest.csv
-          graficos_artigo/
+      - name: Salvar Resultado Final para a Equipe (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dados_enriquecidos_ia
+          path: |
+            resultado_isolation_forest.csv
+            graficos_artigo/
