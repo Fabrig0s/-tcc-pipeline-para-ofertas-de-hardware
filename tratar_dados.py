@@ -1,52 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Script de tratamento (Transform) — recalcula atributos derivados das
-tabelas do Data Warehouse: identificação de marca e padronização de
-loja (dimensões PRODUTO e LOJA), além de média histórica, detecção de
-outlier e classificação de situação de compra para cada oferta (fato
-OFERTA).
+Script de tratamento (Transform) adaptado para Supabase (PostgreSQL).
 
-O BigQuery em modo Sandbox não permite operações UPDATE/MERGE. Por
-esse motivo, o script lê a tabela por completo, recalcula os valores
-em pandas e regrava a tabela inteira (WRITE_TRUNCATE).
-
-O cálculo da média histórica e da classificação de cada oferta utiliza
-exclusivamente coletas anteriores à oferta em análise, nunca coletas
-futuras, prevenindo viés de antecipação (look-ahead bias) na série. A
-primeira coleta de cada produto não possui histórico anterior e recebe
-a classificação "Sem histórico".
-
-Pré-requisitos:
-1. gcloud auth application-default login
-   gcloud config set project <projeto>
-2. python -m pip install google-cloud-bigquery pandas numpy db-dtypes
-3. Ajustar PROJECT_ID e DATASET_ID conforme o ambiente
-4. Execução: python tratar_dados.py
-
-O script é idempotente: pode ser executado quantas vezes forem
-necessárias, pois recalcula os valores a partir dos dados atuais das
-tabelas em cada execução, sem acumular erro entre execuções.
+Lê as tabelas utilizando a API REST do Supabase (com paginação para 
+contornar o limite padrão de 1000 linhas), recalcula os atributos 
+derivados utilizando o Pandas e devolve os dados através de UPSERT 
+(em lotes) para evitar limites de payload.
 """
 
+import os
 import pandas as pd
-from google.cloud import bigquery
+from supabase import create_client, Client
 
 # ---------------------------------------------------------------------
-# CONFIGURAÇÃO
+# CONFIGURAÇÃO SUPABASE
 # ---------------------------------------------------------------------
-PROJECT_ID = "tcc-engenharia-computacao"
-DATASET_ID = "banco_dados_final"
+# Recomenda-se utilizar variáveis de ambiente por segurança
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "postgresql://postgres.pxetpadnjpcvvmqlqvzg:Tcc%402026!dd@aws-0-us-east-1.pooler.supabase.com:5432/postgres")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "Tcc%402026!dd")
 
-TABELA_PRODUTO = f"{PROJECT_ID}.{DATASET_ID}.PRODUTO"
-TABELA_LOJA = f"{PROJECT_ID}.{DATASET_ID}.LOJA"
-TABELA_OFERTA = f"{PROJECT_ID}.{DATASET_ID}.OFERTA"
+TABELA_PRODUTO = "PRODUTO"
+TABELA_LOJA = "LOJA"
+TABELA_OFERTA = "OFERTA"
 
-# Margem de classificação: variação de 10% em torno da média histórica
-# define as faixas de "Boa compra" e "Evitar".
 MARGEM_SITUACAO = 0.10
-
-# Limite de variação (em relação à média histórica) para que uma
-# oferta seja classificada como outlier.
 LIMITE_OUTLIER = 0.30
 
 COLUNAS_OFERTA = [
@@ -55,9 +32,46 @@ COLUNAS_OFERTA = [
     "url_oferta", "data_coleta",
 ]
 
+# ---------------------------------------------------------------------
+# FUNÇÕES DE COMUNICAÇÃO COM SUPABASE
+# ---------------------------------------------------------------------
+def get_supabase_client() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def get_client():
-    return bigquery.Client(project=PROJECT_ID)
+def fetch_all(supabase: Client, table_name: str) -> pd.DataFrame:
+    """Lê todos os registos da tabela contornando o limite de 1000 linhas da API REST."""
+    all_records = []
+    limit = 1000
+    offset = 0
+    
+    while True:
+        response = supabase.table(table_name).select("*").range(offset, offset + limit - 1).execute()
+        data = response.data
+        all_records.extend(data)
+        
+        if len(data) < limit:
+            break
+        offset += limit
+        
+    return pd.DataFrame(all_records)
+
+def upsert_em_lotes(supabase: Client, table_name: str, df: pd.DataFrame, chunk_size=500):
+    """Envia os dados de volta para o Supabase em lotes (chunks) para evitar timeouts."""
+    if df.empty:
+        return
+        
+    # Converte tipos datetime para string (ISO) para evitar erros de serialização JSON
+    for col in df.select_dtypes(include=['datetime64[ns, UTC]', 'datetime64[ns]']).columns:
+        df[col] = df[col].astype(str)
+        
+    # Substitui pd.NA e NaN do Pandas por None (nulo no formato JSON)
+    df = df.where(pd.notnull(df), None)
+    
+    records = df.to_dict(orient="records")
+    
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i : i + chunk_size]
+        supabase.table(table_name).upsert(chunk).execute()
 
 
 # ---------------------------------------------------------------------
@@ -84,13 +98,11 @@ MAPA_MARCAS = {
     "galax": "Galax",
 }
 
-
 def padronizar_loja(nome):
     if nome is None or pd.isna(nome):
         return nome
     chave = str(nome).strip().lower()
     return MAPA_LOJAS.get(chave, str(nome).strip().title())
-
 
 def identificar_marca(nome_produto):
     if nome_produto is None or pd.isna(nome_produto):
@@ -102,35 +114,25 @@ def identificar_marca(nome_produto):
     return None
 
 
-def atualizar_produto_marca(client):
-    """Recalcula a marca de cada produto a partir do nome e regrava a
-    tabela PRODUTO por completo."""
-    df = client.query(f"SELECT * FROM `{TABELA_PRODUTO}`").to_dataframe()
+def atualizar_produto_marca(supabase: Client):
+    df = fetch_all(supabase, TABELA_PRODUTO)
     if df.empty:
         return
 
     df["marca"] = df["nome_produto"].apply(identificar_marca)
-
-    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
-    job = client.load_table_from_dataframe(df, TABELA_PRODUTO, job_config=job_config)
-    job.result()
+    upsert_em_lotes(supabase, TABELA_PRODUTO, df)
 
     qtd_identificadas = df["marca"].notna().sum()
     print(f"PRODUTO: marca identificada em {qtd_identificadas} de {len(df)} produto(s).")
 
 
-def atualizar_loja_padronizada(client):
-    """Padroniza o nome de cada loja e regrava a tabela LOJA por
-    completo."""
-    df = client.query(f"SELECT * FROM `{TABELA_LOJA}`").to_dataframe()
+def atualizar_loja_padronizada(supabase: Client):
+    df = fetch_all(supabase, TABELA_LOJA)
     if df.empty:
         return
 
     df["nome_loja"] = df["nome_loja"].apply(padronizar_loja)
-
-    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
-    job = client.load_table_from_dataframe(df, TABELA_LOJA, job_config=job_config)
-    job.result()
+    upsert_em_lotes(supabase, TABELA_LOJA, df)
 
     print(f"LOJA: {len(df)} nome(s) de loja padronizado(s).")
 
@@ -144,7 +146,6 @@ def verificar_outlier(preco, media):
     variacao = abs(preco - media) / media
     return bool(variacao > LIMITE_OUTLIER)
 
-
 def classificar_compra(preco, media):
     if media is None or pd.isna(media) or media == 0:
         return "Sem histórico"
@@ -156,31 +157,28 @@ def classificar_compra(preco, media):
     else:
         return "Evitar"
 
-
 def calcular_tratamento(df: pd.DataFrame) -> pd.DataFrame:
-    """Para cada oferta, considera exclusivamente as coletas anteriores
-    do mesmo produto (nunca coletas futuras) para calcular outlier,
-    média histórica e situação de compra."""
+    # Garante que a data é tratada como datetime para a ordenação correta
+    df['data_coleta'] = pd.to_datetime(df['data_coleta'])
     df = df.sort_values(["id_produto", "data_coleta"]).reset_index(drop=True)
 
-    df["preco_medio_historico"] = pd.NA
+    df["preco_medio_historico"] = None
     df["outlier"] = False
     df["situacao_compra"] = "Sem histórico"
 
     for id_produto, grupo in df.groupby("id_produto", sort=False):
         grupo = grupo.sort_values("data_coleta")
-        precos_anteriores = []  # Preços já observados, excluindo outliers
+        precos_anteriores = []
 
         for idx, row in grupo.iterrows():
             preco_atual = row["preco"]
 
             if not precos_anteriores:
-                df.at[idx, "preco_medio_historico"] = pd.NA
+                df.at[idx, "preco_medio_historico"] = None
                 df.at[idx, "outlier"] = False
                 df.at[idx, "situacao_compra"] = "Sem histórico"
             else:
                 media = sum(precos_anteriores) / len(precos_anteriores)
-
                 is_outlier = verificar_outlier(preco_atual, media)
                 situacao = classificar_compra(preco_atual, media)
 
@@ -188,25 +186,22 @@ def calcular_tratamento(df: pd.DataFrame) -> pd.DataFrame:
                 df.at[idx, "outlier"] = is_outlier
                 df.at[idx, "situacao_compra"] = situacao
 
-            # Um preço só integra o histórico de comparações futuras
-            # quando não é um outlier, evitando distorcer a média.
             if not df.at[idx, "outlier"]:
                 precos_anteriores.append(preco_atual)
 
     return df
 
-
 def main():
-    client = get_client()
+    supabase = get_supabase_client()
 
     print("Atualizando marca dos produtos...")
-    atualizar_produto_marca(client)
+    atualizar_produto_marca(supabase)
 
     print("Padronizando nomes de loja...")
-    atualizar_loja_padronizada(client)
+    atualizar_loja_padronizada(supabase)
 
-    print("\nLendo ofertas do BigQuery...")
-    df = client.query(f"SELECT * FROM `{TABELA_OFERTA}`").to_dataframe()
+    print("\nLendo ofertas do Supabase...")
+    df = fetch_all(supabase, TABELA_OFERTA)
 
     if df.empty:
         print("Nenhuma oferta encontrada na tabela. Nada a tratar.")
@@ -217,23 +212,8 @@ def main():
     resultado = calcular_tratamento(df)
     resultado = resultado[COLUNAS_OFERTA]
 
-    print("Regravando a tabela OFERTA com os resultados calculados...")
-    job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_TRUNCATE",
-        schema=[
-            bigquery.SchemaField("id_oferta", "INT64"),
-            bigquery.SchemaField("id_produto", "STRING"),
-            bigquery.SchemaField("id_loja", "INT64"),
-            bigquery.SchemaField("preco", "FLOAT64"),
-            bigquery.SchemaField("preco_medio_historico", "FLOAT64"),
-            bigquery.SchemaField("outlier", "BOOL"),
-            bigquery.SchemaField("situacao_compra", "STRING"),
-            bigquery.SchemaField("url_oferta", "STRING"),
-            bigquery.SchemaField("data_coleta", "TIMESTAMP"),
-        ],
-    )
-    job = client.load_table_from_dataframe(resultado, TABELA_OFERTA, job_config=job_config)
-    job.result()
+    print("Enviando os resultados calculados para o Supabase (UPSERT)...")
+    upsert_em_lotes(supabase, TABELA_OFERTA, resultado)
 
     resumo = resultado["situacao_compra"].value_counts()
     qtd_outliers = int(resultado["outlier"].sum())
@@ -243,7 +223,6 @@ def main():
     print("Situação de compra:")
     for situacao, qtd in resumo.items():
         print(f"  {situacao}: {qtd}")
-
 
 if __name__ == "__main__":
     main()
